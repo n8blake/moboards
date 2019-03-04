@@ -99,12 +99,58 @@ class MContactRightTriangle {
 		return ypm2knots(ypm); 
 	}
 
+	// get CPA should take a 2nd MContactRightTriangle
+	// and return a CPA object with True bearing, range
+	// and time.
+	getCPA(m2, srm){
+		let drm = this.getDRMto(m2);
+		let cpaRange;
+		let cpaBearing = drm - 90;
+		let cpaTime;
+
+		if (cpaBearing < 0) {
+			cpaBearing = cpaBearing + 360;
+		}
+
+		let theta = toRadians(Math.abs(cpaBearing - m2.trueBearing));
+		cpaRange = this.r * Math.cos(theta);
+		let d = this.r * Math.sin(theta);
+		cpaTime = d / knots2ypm(srm);
+
+		let cpa = {};
+		cpa.range = cpaRange;
+		cpa.bearing = cpaBearing;
+		cpa.time = cpaTime;
+		return cpa;
+	}
+
+  // get the contact's true course and speed provided
+  // a valid MContactRightTriange (m2), the speed of 
+  // relative motion (srm) between the contact and 
+  // and e, and the true course and speed of e. 
+	getContactTrueData(m2, srm, trueCourse, trueSpeed){
+		let drm = this.getDRMto(m2);
+		let C = toRadians(Math.abs(drm - trueCourse));
+		let a = srm;
+		let c = trueSpeed;
+		let b = Math.sqrt(sq(a) - (2 * a * b * Math.cos(C)) - sq(c));
+		let contactData = {};
+		contactData.speed = b;
+		contactData.course = toDegrees(C);
+		return contactData;
+	}
+
 }
 
+function sq(num) {
+	return Math.pow(num, 2);
+}
+
+// Take an angle in degrees and return an anble in radians
 function toRadians (angle) {
 	return angle * (Math.PI / 180);
 }
-
+// Take an angle in radians and return an angle in degrees
 function toDegrees (angle) {
 	return angle * (180 / Math.PI);
 }
@@ -134,6 +180,9 @@ class ContactTable extends React.Component {
       osSpeed:'',
       solutionMsg:'',
       drm:'',
+      srm:'',
+      contactTrueData:{course:'',speed:''},
+      cpa:{range:'',bearing:'',time:''},
       contacts:[{time:0, bearing: 1 ,range: 1000}]
     };
     
@@ -165,14 +214,6 @@ class ContactTable extends React.Component {
   	if (m2t > m1t) {
   		let m1mins = m1t % 100;
   		let m2mins = m2t % 100;
-  		//let m1hrs = parseInt(m1t) / 100;
-  		//let m2hrs = parseInt(m2t) / 100;
-  		
-  		//console.log("m1mins: " + m1mins + " m2mins: " + m2mins);
-		//console.log("m1hrs: " + m1hrs + " m2hrs: " + m2hrs);
-  		//m1mins += m1hrs * 60;
-  		//m2mins += m2hrs * 60;
-
   		let interval = m2mins - m1mins;
   		this.setState({ctinterval:interval});  
   	}
@@ -189,16 +230,24 @@ class ContactTable extends React.Component {
   	let m1 = new MContactRightTriangle(m1r, m1b);
   	let m2 = new MContactRightTriangle(m2r, m2b);
 
+  	let trueCourse = this.state.osCourse;
+  	let trueSpeed = this.state.osSpeed;
+
   	let drm = m1.getDRMto(m2);
   	if(this.state.ctinterval > 0) {
   		let srm = m1.getSRM(m2, this.state.ctinterval);
-  		this.setState({srm:srm});
+  		// cpa should be an object that has bearing, range and time
+  		let cpa = m1.getCPA(m2, srm);
+  		console.log(cpa);
+  		let contactTrueData = m1.getContactTrueData(m2, srm, trueCourse, trueSpeed);
+  		this.setState({srm:srm, cpa:cpa, contactTrueData:contactTrueData});
   	}
     this.setState({drm:drm});
   }
   
 
   render() {
+
     return(
       <div>
       <form > 
@@ -267,10 +316,15 @@ class ContactTable extends React.Component {
         <div>
         <br /><br /><br /><br />
         <div>
-        	<div><strong>Solution</strong></div>
+        	<div><strong>Solution</strong></div><br/>
         	{this.state.solutionMsg}
-        	DRM: {this.state.drm} °T<br/>
-        	SRM: {this.state.srm} KTS
+        	DRM: {Number((this.state.drm)).toFixed(2)} °T<br/>
+        	SRM: {Number((this.state.srm)).toFixed(2)} KTS<br/><br/>
+        	CONTACT COURSE: {Number((this.state.contactTrueData.course)).toFixed(2)} °T<br/>
+        	CONTACT SPEED: {Number((this.state.contactTrueData.speed)).toFixed(2)} KTS<br/><br/>
+        	CPA Bearing: {Number((this.state.cpa.bearing)).toFixed(2)} °T<br/>
+        	CPA Range: {Number((this.state.cpa.range)).toFixed(2)} YDS<br/>
+        	CPA Time: +{Number((this.state.cpa.time)).toFixed(2)} Mins<br/>
         </div>
 
         </div>
