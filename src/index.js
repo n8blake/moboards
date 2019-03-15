@@ -4,7 +4,6 @@ import './index.css';
 //import './index.html';
 //import {Table} from 'react-bootstrap'; 
 
-
 class MContactRightTriangle {
 
 	constructor(range, bearing){
@@ -105,8 +104,25 @@ class MContactRightTriangle {
 	getCPA(m2, srm){
 		let drm = this.getDRMto(m2);
 		let cpaRange;
-		let cpaBearing = drm - 90;
 		let cpaTime;
+    let cpaBearing;
+    let drmR = drm - 180;
+
+    drmR = (drmR < 0) ? (drmR + 360) : drmR;
+
+    if (drm < 180) {
+      if((this.bearing < drm && m2.bearing < drm) || (this.bearing > drmR && m2.bearing > drmR)){
+        cpaBearing = drm - 90;
+      } else {
+        cpaBearing = drm + 90;
+      }
+    } else {
+      if((this.bearing < drm && m2.bearing < drm) || (this.bearing > drmR && m2.bearing > drmR)){
+        cpaBearing = drm + 90;
+      } else {
+        cpaBearing = drm - 90;
+      }
+    }
 
 		if (cpaBearing < 0) {
 			cpaBearing = cpaBearing + 360;
@@ -127,19 +143,184 @@ class MContactRightTriangle {
   // get the contact's true course and speed provided
   // a valid MContactRightTriange (m2), the speed of 
   // relative motion (srm) between the contact and 
-  // and e, and the true course and speed of e. 
-	getContactTrueData(m2, srm, trueCourse, trueSpeed){
-		let drm = this.getDRMto(m2);
-		let C = toRadians(Math.abs(drm - trueCourse));
-		let a = srm;
-		let c = trueSpeed;
-		let b = Math.sqrt(sq(a) - (2 * a * b * Math.cos(C)) - sq(c));
+  // and e, and the true course and speed of e,
+  // as defined by the e->r vector. 
+	getContactTrueData(m2, srm, erCourse, erSpeed){
+		
+    erSpeed = +erSpeed;
+    erCourse = +erCourse;
+    let drm = this.getDRMto(m2);
 		let contactData = {};
+    contactData.speed = 0;
+    contactData.course = 0;
+    // If head on collision or overtaking from dead astern...
+    console.log(drm === erCourse);
+    console.log("DRM: " + drm + " tC: " + erCourse);
+    if (drm === erCourse) {
+      contactData.course = erCourse;
+      contactData.speed = erCourse + srm;
+      return contactData;
+    }
+    let headOnCollisionAngle = erCourse - 180;
+    headOnCollisionAngle = (headOnCollisionAngle < 0) ? (360 + headOnCollisionAngle) : headOnCollisionAngle;
+    // stfb you might get hit...
+    if (drm === headOnCollisionAngle){
+      contactData.speed = srm - erSpeed;
+      contactData.course = ((erCourse - 180) < 0) ? ((erCourse - 180) + 360) : (erCourse - 180);
+    }
+
+    // For trig calculations, a variation of the law of cosines is used
+    // in the computations. Traditionally, LOC states that:
+    // c^2 = a^2 + b^2 - 2ab*cos(C);
+    // These calculations change the variables to the following:
+    // A --> e 
+    // B --> m
+    // C --> r
+    // a --> E // also srm
+    // b --> M // also erSpeed
+    // c --> R // a target value, or contact's speed 
+    
+    let E = srm;
+    let M = erSpeed;
+
+    // convert True drm to Relative drm
+    let rdrm = drm - erCourse; 
+    console.log(rdrm);
+    //rdrm = (drm > 180) ? (180 - rdrm) : rdrm;
+    rdrm = (rdrm < 0) ? (rdrm + 360) : rdrm;
+    console.log(rdrm);
+    let r = Math.abs(180 - rdrm);
+    let R = getR(E, M, r);
+    let m = getm(E, R, M);
+    let e = 180 - (r + toDegrees(m));
+    let theirCouse = +erCourse + e
+    theirCouse = (theirCouse > 360) ? (theirCouse - 360) : theirCouse;
+    console.log(
+      "r: " + r +
+      "\nR: " + R +
+      "\nm: " + toDegrees(m) +
+      "\ne: " + e +
+      "\ntheir: " + theirCouse
+    );
+    /*if (erCourse > 180) {
+      theirCouse = (360 - e) + erCourse;
+      theirCouse = (theirCouse > 360) ? (theirCouse - 360) : theirCouse;
+    }*/
+
+    contactData.course = theirCouse;
+    contactData.speed = R;
+
+
+    /*if(0 < erCourse && erCourse <= 90) {
+      if(0 < drm && drm < erCourse) {
+          console.log("Case 1");
+          let r = 180 - (erCourse - drm);
+          let R = getR(E, M, r);
+          let m = getm(E, R, M);
+          //console.log("m: " + m + " e: " + e + " r: " + r + " R: " + R);
+          contactData.course = drm + toDegrees(m);
+          contactData.speed = R;
+      } else if (drm > erCourse && drm < 180) {
+          console.log("Case 2");
+          let r = 180 - (drm - erCourse);
+          let R = getR(E, M, r);
+          let m = getm(E, R, M);
+          let e = 180 - (r + toDegrees(m));
+          contactData.course = +erCourse + e;
+          contactData.speed = R;
+      } else if (180 <= drm && drm < (erCourse + 180)) {
+          console.log("Case 3");
+          let r = (erCourse + 180) - drm;
+          let R = getR(E, M, r);
+          let m = getm(E, R, M);
+          let e = 180 - (r + toDegrees(m));
+          contactData.course = +erCourse + e;
+          contactData.speed = R;
+      } else if (360 >= drm && drm > (erCourse + 180)) {
+          console.log("Case 4");
+          let r = drm - (erCourse + 180);
+          let R = getR(E, M, r);
+          let m = getm(E, R, M);
+          let e = 180 - (r + toDegrees(m));
+          let emCourse = ((+erCourse - e) < 0) ? ((+erCourse - e) + 360) : (+erCourse - e);
+          contactData.course = emCourse;
+          contactData.speed = R;
+      } else {
+          console.log("Unaccounted case type I: ");
+          console.log("DRM: " + drm);
+          console.log("erCourse: " + erCourse);
+      }
+    } else if (erCourse > 90 && erCourse <= 180) {
+      if(0 < drm && drm < erCourse){
+        console.log("Case 5");
+        let r = (180 - erCourse) + drm;
+        let R = getR(E, M, r);
+        let m = getm(E, R, M);
+        let e = 180 - (r + toDegrees(m));
+        contactData.course = drm + toDegrees(m);
+        contactData.speed = R;
+      } else if (drm < (180 + erCourse)) {
+        console.log("Case 6");
+        let r = 180 - (drm - erCourse);
+        let R = getR(E, M, r);
+        let m = getm(E, R, M);
+        let e = 180 - (r + toDegrees(m));
+        contactData.speed = R;
+        contactData.course = +erCourse + e;
+      } else if(drm > (erCourse + 180) && drm <= 360) {
+        let r = drm - (erCourse + 180);
+        let R = getR(E, M, r);
+        let m = getm(E, R, M);
+        let e = 180 - (r + toDegrees(m));
+        let emCourse = ((+erCourse - e) < 0) ? ((+erCourse - e) + 360) : (+erCourse - e);
+        contactData.course = emCourse;
+        contactData.speed = R;
+      } else {
+          console.log("Unaccounted case type II: ");
+          console.log("DRM: " + drm);
+          console.log("erCourse: " + erCourse);
+      }
+    } else if (erCourse > 180 && erCourse < 360) {
+      if(drm > erCourse || drm < (erCourse - 180)){
+        let r = ((erCourse - drm) < 0) ? ((erCourse - drm) + 360) : (erCourse - drm);
+        let R = getR(E, M, r);
+        let m = getm(E, R, M);
+        let e = 180 - (r + toDegrees(m));
+        let emCourse = ((erCourse + e) < 360) ? (erCourse + e) : ((erCourse + e) - 360);
+        contactData.speed = R;
+        contactData.course = emCourse;
+      } else {
+        let r = drm (erCourse - 180);
+        let R = getR(E, M, r);
+        let m = getm(E, R, M);
+        let e = 180 - (r + toDegrees(m));
+        let emCourse = erCourse - e;
+        contactData.speed = R;
+        contactData.course = emCourse;
+      }
+    }*/
+
+    /*
+    let C = toRadians(Math.abs(drm - erCourse));
+		let a = srm;
+		let c = erSpeed;
+		let b = Math.sqrt(sq(a) - (2 * a * b * Math.cos(C)) - sq(c));
+		
 		contactData.speed = b;
 		contactData.course = toDegrees(C);
+    */
+
 		return contactData;
 	}
 
+}
+
+function getR(E, M, r) {
+  return Math.sqrt(sq(E) + sq(M) - (2 * E * M * Math.cos(toRadians(r))));
+}
+
+function getm(E, R, M) {
+  return Math.acos((sq(E) + sq(R) - sq(M)) / (2 * E * R));
 }
 
 function sq(num) {
@@ -169,15 +350,15 @@ class ContactTable extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      m1Time:'',
-      m1Bearing:'',
-      m1Range:'', 
-      m2Time:'',
-      m2Bearing:'',
-      m2Range:'',
-      ctinterval:'',
-      osCourse:'',
-      osSpeed:'',
+      m1Time:'1731',
+      m1Bearing:'210',
+      m1Range:'7600', 
+      m2Time:'1734',
+      m2Bearing:'215',
+      m2Range:'12500',
+      ctinterval:'3',
+      osCourse:'300',
+      osSpeed:'12',
       solutionMsg:'',
       drm:'',
       srm:'',
